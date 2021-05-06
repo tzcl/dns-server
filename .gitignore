@@ -5,6 +5,7 @@ tmp/
 
 *.o
 dns_svr
+phase1
 
 # Ignore ccls-cache
 .ccls-cache/
