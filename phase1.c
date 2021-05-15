@@ -65,8 +65,59 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  // PARSE DNS MESSAGE
+  struct packet packet;
+
+  // populate header
+  size_t inc = sizeof(uint16_t) / sizeof(byte);
+  packet.header.id = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.header.flags = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.header.qd_count = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.header.an_count = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.header.ns_count = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.header.ar_count = ntohs(*((uint16_t *)buffer)), buffer += inc;
+
+  // TODO: switch depending on QR bit
+  // should print out all the flags
+
+  // populate question
+  byte qname_buffer[256]; // max len of qname is 255 octets
+  byte label_len = *buffer++;
+  size_t index = 0;
+  while (label_len) {
+    label_len += index;
+    while (index < label_len) {
+      qname_buffer[index++] = *buffer++; // should we be casting to char?
+    }
+    qname_buffer[index++] = '.';
+    label_len = *buffer++;
+  }
+  qname_buffer[--index] = 0; // remove the final '.'
+
+  packet.question.name = qname_buffer; // local scope!
+
+  packet.question.type = ntohs(*((uint16_t *)buffer)), buffer += inc;
+  packet.question.class = ntohs(*((uint16_t *)buffer)), buffer += inc;
+
+  // can append the rest of the buffer?
+  // or do I need to parse the AR record?
+
+  // LOGGING
+  FILE *log = fopen("dns_svr.log", "w");
+  if (!log) {
+    perror("opening log");
     exit(EXIT_FAILURE);
   }
+
+  time_t rawtime = time(NULL);
+  struct tm *timeinfo = gmtime(&rawtime);
+
+  char time_buf[256];
+  strftime(time_buf, 256, "%FT%T%z", timeinfo);
+  fprintf(log, "%s requested %s\n", time_buf, packet.question.name);
+  fflush(log);
+
+  fclose(log);
 
   return 0;
 }
