@@ -7,5 +7,7 @@ tmp/
 dns_svr
 phase1
 
+packets/*
+
 # Ignore ccls-cache
 .ccls-cache/
