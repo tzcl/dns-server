@@ -55,8 +55,16 @@ int main(int argc, char *argv[]) {
   byte *buffer = (byte *)malloc(sz);
   assert(buffer);
 
-  if (read(STDIN_FILENO, buffer, sz) < 0) {
-    perror("reading buffer");
+  size_t n;
+  while ((n = read(STDIN_FILENO, buffer, sz)) < sz) {
+    // TODO: fix up this loop
+    printf("%zu\n", n);
+    if (n < 0) {
+      perror("reading buffer");
+      exit(EXIT_FAILURE);
+    }
+  }
+
     exit(EXIT_FAILURE);
   }
 
