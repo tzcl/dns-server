@@ -11,7 +11,7 @@
 #define AAAA_RECORD 28
 
 struct packet *init_packet() {
-  struct packet *packet = (struct packet *)malloc(sizeof(*packet));
+  struct packet *packet = (struct packet *)malloc(sizeof *packet);
   assert(packet);
 
   packet->question.name = NULL;
@@ -69,9 +69,12 @@ struct packet *parse_packet(int fd, FILE *log) {
     }
   }
 
-  free(buffer);
+  size_t remaining_bytes = sz - (buffer_ptr - buffer);
+  packet->remaining = (byte *)malloc(remaining_bytes);
+  assert(packet->remaining);
+  memcpy(packet->remaining, buffer_ptr, remaining_bytes);
 
-  // TODO: append remaining bytes (phase2)
+  free(buffer);
 
   return packet;
 }
@@ -130,7 +133,7 @@ void parse_question(struct packet *packet, byte **buffer) {
   }
   qname_buffer[index - 1] = '\0'; // remove the final '.'
 
-  packet->question.name = (char *)malloc(index * sizeof(char));
+  packet->question.name = (char *)malloc(index);
   assert(packet->question.name);
   memcpy(packet->question.name, qname_buffer, index);
 
@@ -146,6 +149,7 @@ void parse_answer(struct packet *packet, byte **buffer) {
 
   // TODO: dirty hack because I don't want to do this properly
   packet->answer.name = (char *)malloc(strlen(packet->question.name) + 1);
+  assert(packet->answer.name);
   strcpy(packet->answer.name, packet->question.name);
   *buffer += inc;
 
@@ -156,6 +160,7 @@ void parse_answer(struct packet *packet, byte **buffer) {
 
   packet->answer.rd_length = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
   packet->answer.rdata = (byte *)malloc(packet->answer.rd_length);
+  assert(packet->answer.rdata);
   for (int i = 0; i < packet->answer.rd_length; i++) {
     packet->answer.rdata[i] = *(*buffer)++;
   }
