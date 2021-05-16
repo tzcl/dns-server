@@ -6,6 +6,7 @@ tmp/
 *.o
 dns_svr
 phase1
+test.sh
 
 packets/*
 
