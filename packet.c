@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #define QNAME_LEN 256
+#define AAAA_RECORD 28
 
 struct packet *init_packet() {
   struct packet *packet = (struct packet *)malloc(sizeof(*packet));
@@ -48,16 +49,29 @@ struct packet *parse_packet(int fd, FILE *log) {
 
   byte *buffer_ptr = buffer;
   parse_header(packet, &buffer_ptr);
-  if (is_response(packet)) {
-    printf("Is response!\n");
-  } else {
+
+  if (packet->header.qd_count)
     parse_question(packet, &buffer_ptr);
+
+  if (is_response(packet)) {
+    if (packet->header.an_count) {
+      parse_answer(packet, &buffer_ptr);
+
+      char address[INET6_ADDRSTRLEN];
+      inet_ntop(AF_INET6, packet->answer.rdata, address, INET6_ADDRSTRLEN);
+      write_response(log, packet->answer.name, address);
+    }
+  } else {
     write_request(log, packet->question.name);
+    if (!is_AAAA(packet)) {
+      write_invalid_request(log);
+      // TODO: respond with rcode4 (phase2)
+    }
   }
 
   free(buffer);
 
-  // TODO: append remaining bytes
+  // TODO: append remaining bytes (phase2)
 
   return packet;
 }
@@ -71,7 +85,12 @@ void free_packet(struct packet *packet) {
   }
 
   // Clean up answer
-  // TODO: implement
+  if (packet->answer.name) {
+    free(packet->answer.name);
+  }
+  if (packet->answer.rdata) {
+    free(packet->answer.rdata);
+  }
 
   // Clean up remaining byte data
   if (packet->remaining) {
@@ -118,14 +137,37 @@ void parse_question(struct packet *packet, byte **buffer) {
   size_t inc = sizeof(uint16_t) / sizeof(byte);
   packet->question.type = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
   packet->question.qclass = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-
-  // TODO: need to check that the question type is AAAA
 }
 
 /**
  * Populates the packet answer and increments the buffer pointer */
-void parse_answer(struct packet *packet, byte **buffer) {}
+void parse_answer(struct packet *packet, byte **buffer) {
+  size_t inc = sizeof(uint16_t) / sizeof(byte);
+
+  // TODO: dirty hack because I don't want to do this properly
+  packet->answer.name = (char *)malloc(strlen(packet->question.name) + 1);
+  strcpy(packet->answer.name, packet->question.name);
+  *buffer += inc;
+
+  packet->answer.type = packet->question.type, *buffer += inc;
+  packet->answer.rclass = packet->question.qclass, *buffer += inc;
+
+  packet->answer.ttl = ntohl(*((uint32_t *)*buffer)), *buffer += 2 * inc;
+
+  packet->answer.rd_length = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
+  packet->answer.rdata = (byte *)malloc(packet->answer.rd_length);
+  for (int i = 0; i < packet->answer.rd_length; i++) {
+    packet->answer.rdata[i] = *(*buffer)++;
+  }
+}
 
 /**
  * Returns 1 if the packet is a response, else returns 0  */
 int is_response(struct packet *packet) { return packet->header.flags >> 15; }
+
+/**
+ * Returns 1 if the request is for an AAAA record, else returns 0
+ * Assumes the packet is known to be a DNS request */
+int is_AAAA(struct packet *packet) {
+  return packet->question.type == AAAA_RECORD;
+}

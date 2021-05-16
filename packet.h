@@ -64,4 +64,9 @@ void parse_answer(struct packet *packet, byte **buffer);
  * Returns 1 if the packet is a response, else returns 0  */
 int is_response(struct packet *packet);
 
+/**
+ * Returns 1 if the request is for an AAAA record, else returns 0
+ * Assumes the packet is known to be a DNS request */
+int is_AAAA(struct packet *packet);
+
 #endif // PACKET_H_
