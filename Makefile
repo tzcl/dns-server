@@ -7,8 +7,11 @@ all: dns_svr phase1
 dns_svr: dns_svr.c
 	gcc -o dns_svr dns_svr.c -Wall
 
-phase1: phase1.c
-	gcc -o phase1 phase1.c -Wall
+phase1: phase1.c packet.o
+	gcc -o phase1 phase1.c packet.o -Wall
+
+packet.o: packet.c packet.h
+	gcc -c packet.c -Wall
 
 .PHONY: clean
 
