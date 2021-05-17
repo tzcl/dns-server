@@ -1,8 +1,6 @@
 #ifndef PACKET_H_
 #define PACKET_H_
 
-#include "log.h"
-
 #include <stdint.h>
 
 typedef uint8_t byte;
@@ -29,6 +27,7 @@ struct resource {
   uint32_t ttl;
   uint16_t rd_length;
   byte *rdata;
+  char *address;
 };
 
 struct packet {
@@ -39,14 +38,18 @@ struct packet {
 };
 
 /**
- * Reads in the next message from the given file descriptor and writes messages
- * to the provided log. Caller is responsible for freeing the resulting struct.
- */
-struct packet *parse_packet(int fd, FILE *log);
+ * Creates the memory for a packet */
+struct packet *init_packet();
 
 /**
  * Frees the memory allocated to a packet */
 void free_packet(struct packet *packet);
+
+/**
+ * Reads in the next message from the given file descriptor.
+ * Caller is responsible for freeing the resulting struct.
+ */
+struct packet *parse_packet(int fd);
 
 /**
  * Populates the packet header and increments the buffer pointer */

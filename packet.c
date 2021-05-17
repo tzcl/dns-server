@@ -17,64 +17,8 @@ struct packet *init_packet() {
   packet->question.name = NULL;
   packet->answer.name = NULL;
   packet->answer.rdata = NULL;
+  packet->answer.address = NULL;
   packet->remaining = NULL;
-
-  return packet;
-}
-
-/**
- * Reads in the next message from the given file descriptor and writes messages
- * to the provided log. Caller is responsible for freeing the resulting struct.
- */
-struct packet *parse_packet(int fd, FILE *log) {
-  uint16_t sz;
-  if (read(STDIN_FILENO, &sz, 2) < 0) {
-    perror("reading size");
-    exit(EXIT_FAILURE);
-  }
-  sz = ntohs(sz);
-
-  byte *buffer = (byte *)malloc(sz);
-  assert(buffer);
-
-  size_t n;
-  while ((n = read(STDIN_FILENO, buffer, sz)) < sz) {
-    if (n < 0) {
-      perror("reading buffer");
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  struct packet *packet = init_packet();
-
-  byte *buffer_ptr = buffer;
-  parse_header(packet, &buffer_ptr);
-
-  if (packet->header.qd_count)
-    parse_question(packet, &buffer_ptr);
-
-  if (is_response(packet)) {
-    if (packet->header.an_count) {
-      parse_answer(packet, &buffer_ptr);
-
-      char address[INET6_ADDRSTRLEN];
-      inet_ntop(AF_INET6, packet->answer.rdata, address, INET6_ADDRSTRLEN);
-      write_response(log, packet->answer.name, address);
-    }
-  } else {
-    write_request(log, packet->question.name);
-    if (!is_AAAA(packet)) {
-      write_invalid_request(log);
-      // TODO: respond with rcode4 (phase2)
-    }
-  }
-
-  size_t remaining_bytes = sz - (buffer_ptr - buffer);
-  packet->remaining = (byte *)malloc(remaining_bytes);
-  assert(packet->remaining);
-  memcpy(packet->remaining, buffer_ptr, remaining_bytes);
-
-  free(buffer);
 
   return packet;
 }
@@ -101,6 +45,52 @@ void free_packet(struct packet *packet) {
   }
 
   free(packet);
+}
+
+/**
+ * Reads in the next message from the given file descriptor.
+ * Caller is responsible for freeing the resulting struct.
+ */
+struct packet *parse_packet(int fd) {
+  uint16_t sz;
+  if (read(STDIN_FILENO, &sz, 2) < 0) {
+    perror("reading size");
+    exit(EXIT_FAILURE);
+  }
+  sz = ntohs(sz);
+
+  byte *buffer = (byte *)malloc(sz);
+  assert(buffer);
+
+  size_t n;
+  while ((n = read(STDIN_FILENO, buffer, sz)) < sz) {
+    if (n < 0) {
+      perror("reading buffer");
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  struct packet *packet = init_packet();
+
+  byte *buffer_ptr = buffer;
+  parse_header(packet, &buffer_ptr);
+
+  if (packet->header.qd_count)
+    parse_question(packet, &buffer_ptr);
+
+  if (packet->header.an_count)
+    parse_answer(packet, &buffer_ptr);
+
+  size_t remaining_bytes = sz - (buffer_ptr - buffer);
+  if (remaining_bytes) {
+    packet->remaining = (byte *)malloc(remaining_bytes);
+    assert(packet->remaining);
+    memcpy(packet->remaining, buffer_ptr, remaining_bytes);
+  }
+
+  free(buffer);
+
+  return packet;
 }
 
 /**
@@ -164,6 +154,11 @@ void parse_answer(struct packet *packet, byte **buffer) {
   for (int i = 0; i < packet->answer.rd_length; i++) {
     packet->answer.rdata[i] = *(*buffer)++;
   }
+
+  packet->answer.address = (char *)malloc(INET6_ADDRSTRLEN);
+  assert(packet->answer.address);
+  inet_ntop(AF_INET6, packet->answer.rdata, packet->answer.address,
+            INET6_ADDRSTRLEN);
 }
 
 /**
