@@ -8,11 +8,14 @@ int main(int argc, char *argv[]) {
   struct packet *packet = parse_packet(0);
 
   if (is_response(packet)) {
-    write_response(log, packet->answer.name, packet->answer.address);
+    if (packet->header.an_count)
+      write_response(log, packet->answer.name, packet->answer.address);
   } else {
-    write_request(log, packet->question.name);
-    if (!is_AAAA(packet)) {
-      write_invalid_request(log);
+    if (packet->header.qd_count) {
+      write_request(log, packet->question.name);
+      if (!is_AAAA(packet)) {
+        write_invalid_request(log);
+      }
     }
   }
 
