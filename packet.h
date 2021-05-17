@@ -45,6 +45,8 @@ struct packet *init_packet();
  * Frees the memory allocated to a packet */
 void free_packet(struct packet *packet);
 
+struct packet *parse(byte buffer[], int n);
+
 /**
  * Reads in the next message from the given file descriptor.
  * Caller is responsible for freeing the resulting struct.

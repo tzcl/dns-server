@@ -53,7 +53,7 @@ void free_packet(struct packet *packet) {
  */
 struct packet *parse_packet(int fd) {
   uint16_t sz;
-  if (read(STDIN_FILENO, &sz, 2) < 0) {
+  if (read(fd, &sz, 2) < 0) {
     perror("reading size");
     exit(EXIT_FAILURE);
   }
@@ -63,7 +63,7 @@ struct packet *parse_packet(int fd) {
   assert(buffer);
 
   size_t n;
-  while ((n = read(STDIN_FILENO, buffer, sz)) < sz) {
+  while ((n = read(fd, buffer, sz)) < sz) {
     if (n < 0) {
       perror("reading buffer");
       exit(EXIT_FAILURE);
