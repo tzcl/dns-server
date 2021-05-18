@@ -130,17 +130,35 @@ void accept_client(int *new_fd, int listener_fd) {
 }
 
 /**
- * Reads a DNS packet from the specificed socket */
-void read_packet(int sock_fd, byte **buffer, uint16_t *buf_size) {
+ * Reads from the socket until all bytes have been received */
+ssize_t read_all(int sock_fd, void *buffer, uint16_t size) {
   ssize_t n;
+  size_t recv = 0;
 
-  // TODO: implement a read_all function?
-  n = read(sock_fd, buf_size, 2);
-  if (n <= 0) {
-    perror("failed to read from client");
-    exit(EXIT_FAILURE);
+  while (recv < size) {
+    n = read(sock_fd, buffer + recv, size - recv);
+    if (n == 0)
+      return n;
+    if (n < 0) {
+      perror("read all");
+      exit(EXIT_FAILURE);
+    }
+
+    recv += n;
   }
-  *buf_size = ntohs(*buf_size);
+
+  return recv;
+}
+
+/**
+ * Reads a DNS packet from the specificed socket */
+ssize_t read_packet(int sock_fd, byte **buffer, uint16_t *buf_size) {
+  uint16_t tbuf_size;
+  if (!read_all(sock_fd, &tbuf_size, 2)) {
+    return 0;
+  }
+
+  *buf_size = ntohs(tbuf_size);
 
   *buffer = malloc(*buf_size);
   if (!buffer) {
@@ -148,16 +166,32 @@ void read_packet(int sock_fd, byte **buffer, uint16_t *buf_size) {
     exit(EXIT_FAILURE);
   }
 
-  n = read(sock_fd, *buffer, *buf_size);
-  if (n <= 0) {
-    perror("failed to read from client");
-    exit(EXIT_FAILURE);
-  }
+  return read_all(sock_fd, *buffer, *buf_size);
 }
 
 /**
  * Writes a DNS packet to the specified socket */
-void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {}
+void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
+  ssize_t n, m;
+  uint16_t nbuf_size = htons(buf_size);
+
+  n = write(sock_fd, &nbuf_size, 2);
+  if (n < 0) {
+    perror("write packet");
+    exit(EXIT_FAILURE);
+  }
+
+  m = write(sock_fd, buffer, buf_size);
+  if (m < 0) {
+    perror("write packet");
+    exit(EXIT_FAILURE);
+  }
+
+  if (n + m < buf_size) {
+    fprintf(stderr, "Only wrote %ld of %d bytes\n", (n + m), buf_size);
+    exit(EXIT_FAILURE);
+  }
+}
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
@@ -187,76 +221,53 @@ int main(int argc, char *argv[]) {
   init_server(argv[1], argv[2], &hints, &server_addr);
   connect_to_server(&server_fd, &server_addr);
 
-  byte *buffer;
-  uint16_t buf_size, nbuf_size;
-  int sock_fd, n;
+  byte *buffer, *resend;
+  uint16_t buf_size;
+  int sock_fd;
+
+  struct packet *packet = NULL;
 
   while (1) {
     accept_client(&sock_fd, listener_fd);
 
+    // Parse request from client
     read_packet(sock_fd, &buffer, &buf_size);
+    packet = parse_packet(buffer);
 
-    printf("Buffer size %d\n", buf_size);
-    for (int i = 0; i < buf_size; ++i) { // TODO: debug
-      printf("%x ", buffer[i]);
-    }
-    printf("\n");
+    printf("%s request for %s\n", is_AAAA(packet) ? "AAAA" : "non-AAAA",
+           packet->question.name);
 
     // forward to server
-    nbuf_size = htons(buf_size);
-    n = write(server_fd, &nbuf_size, 2);
-    n += write(server_fd, buffer, buf_size);
-    printf("wrote %d bytes to server\n", n); // TODO: debug
-    if (n < 0) {
-      perror("failed to write to server");
-      exit(EXIT_FAILURE);
-    }
+    write_packet(server_fd, buffer, buf_size);
 
+    resend = buffer;
     free(buffer);
+    free_packet(packet);
 
-    read_packet(server_fd, &buffer, &buf_size);
-    printf("read %d bytes from server\n", buf_size); // TODO: debug
-    // TODO: move this into read_packet??
-    if (n == 0) {
-      // upstream server closed the connection!
+    // Parse response from server
+    if (!read_packet(server_fd, &buffer, &buf_size)) {
       close(server_fd);
 
-      printf("Reconnecting to the upstream server...\n"); // TODO: debug
       reconnect_to_server(&server_fd, &server_addr);
-      printf("Reconnected to the upstream server!\n"); // TODO: debug
 
-      // resend buffer to upstream server
-      /* n = write(server_fd, buffer, n); */
-      printf("wrote %d bytes to server\n", n); // TODO: debug
-      /* n = read(server_fd, buffer, buf_); */
-      printf("read %d bytes from server\n", n); // TODO: debug
-    }
-    if (n < 0) {
-      perror("failed to read from server");
-      exit(EXIT_FAILURE);
-    }
-    for (int i = 0; i < buf_size; ++i) { // TODO: debug
-      printf("%x ", buffer[i]);
-    }
-    printf("\n");
+      write_packet(server_fd, resend, buf_size);
+      free(resend);
 
-    nbuf_size = htons(buf_size);
-    n = write(sock_fd, &nbuf_size, 2);
-    n += write(sock_fd, buffer, buf_size);
-    printf("wrote %d bytes to client\n", n); // TODO: debug
-    if (n < 0) {
-      perror("failed to write to client");
-      exit(EXIT_FAILURE);
+      read_packet(server_fd, &buffer, &buf_size);
     }
+
+    packet = parse_packet(buffer);
+
+    printf("response for %s: %s\n", packet->answer.name,
+           packet->answer.address);
+
+    write_packet(sock_fd, buffer, buf_size);
+
+    free(buffer);
+    free_packet(packet);
 
     // finished communicating with the client
-    free(buffer);
     close(sock_fd);
-
-    printf("DONE!\n");
-    printf("----------------------------------------------------\n"); // TODO:
-    // debug
-    break;
   }
 
   freeaddrinfo(server_addr);

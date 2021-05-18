@@ -45,13 +45,11 @@ struct packet *init_packet();
  * Frees the memory allocated to a packet */
 void free_packet(struct packet *packet);
 
-struct packet *parse(byte buffer[], int n);
-
 /**
- * Reads in the next message from the given file descriptor.
+ * Parse the packet in the given buffer.
  * Caller is responsible for freeing the resulting struct.
  */
-struct packet *parse_packet(int fd);
+struct packet *parse_packet(byte *buffer);
 
 /**
  * Populates the packet header and increments the buffer pointer */

@@ -51,25 +51,7 @@ void free_packet(struct packet *packet) {
  * Reads in the next message from the given file descriptor.
  * Caller is responsible for freeing the resulting struct.
  */
-struct packet *parse_packet(int fd) {
-  uint16_t sz;
-  if (read(fd, &sz, 2) < 0) {
-    perror("reading size");
-    exit(EXIT_FAILURE);
-  }
-  sz = ntohs(sz);
-
-  byte *buffer = (byte *)malloc(sz);
-  assert(buffer);
-
-  size_t n;
-  while ((n = read(fd, buffer, sz)) < sz) {
-    if (n < 0) {
-      perror("reading buffer");
-      exit(EXIT_FAILURE);
-    }
-  }
-
+struct packet *parse_packet(byte *buffer) {
   struct packet *packet = init_packet();
 
   byte *buffer_ptr = buffer;
@@ -80,15 +62,6 @@ struct packet *parse_packet(int fd) {
 
   if (packet->header.an_count)
     parse_answer(packet, &buffer_ptr);
-
-  size_t remaining_bytes = sz - (buffer_ptr - buffer);
-  if (remaining_bytes) {
-    packet->remaining = (byte *)malloc(remaining_bytes);
-    assert(packet->remaining);
-    memcpy(packet->remaining, buffer_ptr, remaining_bytes);
-  }
-
-  free(buffer);
 
   return packet;
 }
