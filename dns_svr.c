@@ -13,6 +13,8 @@
 #define PORT "8053"
 #define BACKLOG 5
 
+/**
+ * Initialises a socket so our server can receive clients */
 void init_socket(int *sock_fd, struct addrinfo *hints) {
   int status, yes = 1;
   struct addrinfo *res, *p;
@@ -59,6 +61,63 @@ void init_socket(int *sock_fd, struct addrinfo *hints) {
   }
 }
 
+/**
+ * Initialises the upstream server's address info */
+void init_server(int *server_fd, char *addr, char *port, struct addrinfo *hints,
+                 struct addrinfo **server_addr) {
+  int status;
+
+  if ((status = getaddrinfo(addr, port, hints, server_addr)) != 0) {
+    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
+    exit(EXIT_FAILURE);
+  }
+}
+
+/**
+ * Opens a connection to the upstream server and saves the server address */
+void connect_to_server(int *server_fd, struct addrinfo **server_addr) {
+  struct addrinfo *p;
+
+  for (p = *server_addr; p != NULL; p = p->ai_next) {
+    if ((*server_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
+        -1) {
+      perror("dns_svr: server socket");
+      continue;
+    }
+
+    if (connect(*server_fd, p->ai_addr, p->ai_addrlen) != -1) {
+      break;
+    }
+
+    close(*server_fd);
+  }
+
+  if (!p) {
+    perror("failed to connect");
+    exit(EXIT_FAILURE);
+  }
+
+  *server_addr = p;
+}
+
+void reconnect_to_server(int *server_fd, struct addrinfo **server_addr) {
+  struct addrinfo *p = *server_addr;
+
+  if ((*server_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
+      -1) {
+    perror("dns_svr: reopen server socket");
+    exit(EXIT_FAILURE);
+  }
+
+  if ((connect(*server_fd, p->ai_addr, p->ai_addrlen)) == -1) {
+    perror("dns_svr: reconnect to server");
+    exit(EXIT_FAILURE);
+  }
+}
+
+/**
+ * Blocks until a client tries to access the socket and then opens a connection
+ * with that client */
 void accept_client(int *new_fd, int listener_fd) {
   struct sockaddr_storage client_addr;
   socklen_t addr_size = sizeof client_addr;
@@ -88,131 +147,97 @@ int main(int argc, char *argv[]) {
   init_socket(&listener_fd, &hints);
 
   // set up socket for forwarding requests
-  struct addrinfo *res, *p;
-  int forward_fd;
+  struct addrinfo *server_addr;
+  int server_fd;
 
   memset(&hints, 0, sizeof hints);
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
 
-  int status;
-  if ((status = getaddrinfo(argv[1], argv[2], &hints, &res)) != 0) {
-    fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(status));
-    exit(EXIT_FAILURE);
-  }
+  init_server(&server_fd, argv[1], argv[2], &hints, &server_addr);
+  connect_to_server(&server_fd, &server_addr);
+  printf("server: connected to upstream server!\n"); // TODO: debug
 
-  // TODO: extract into function?
-  for (p = res; p != NULL; p = p->ai_next) {
-    forward_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-    if (forward_fd == -1)
-      continue;
-
-    if (connect(forward_fd, p->ai_addr, p->ai_addrlen) != -1) {
-      break;
-    }
-
-    close(forward_fd);
-  }
-
-  if (!p) {
-    perror("failed to connect");
-    exit(EXIT_FAILURE);
-  }
-
-  printf("server: waiting for connections...\n");
-
-  printf("server: received connection!\n");
+  printf("server: waiting for connections...\n"); // TODO: debug
 
   struct packet *packet = NULL;
   byte buffer[2048];
-  int sock_fd, n;
+  int sock_fd, n, read_from_client;
   while (1) {
     accept_client(&sock_fd, listener_fd);
+
     // TODO: need to refactor packet parsing
     /* packet = parse_packet(sock_fd); */
+
     n = read(sock_fd, buffer, 2048);
     if (n < 0) {
-      perror("failed to read");
+      perror("failed to read from client");
       exit(EXIT_FAILURE);
     }
-    for (int i = 0; i < n; ++i) {
+
+    read_from_client = n;
+
+    for (int i = 0; i < n; ++i) { // TODO: debug
       printf("%x ", buffer[i]);
     }
     printf("\n");
 
     // forward to server
-    n = write(forward_fd, buffer, n);
-    printf("wrote %d bytes to server\n", n);
+    n = write(server_fd, buffer, n);
+    printf("wrote %d bytes to server\n", n); // TODO: debug
     if (n == 0) {
-      fprintf(stderr, "Not writing anything!!!!\n");
-      exit(EXIT_FAILURE);
+      fprintf(stderr, "Not writing anything!!!!\n"); // TODO: debug
+      exit(EXIT_FAILURE);                            // do I even need this?
     }
     if (n < 0) {
-      perror("failed to write");
+      perror("failed to write to server");
       exit(EXIT_FAILURE);
     }
 
-    int old_n = n;
-
-    n = read(forward_fd, buffer, 2048);
-    printf("read %d bytes from server\n", n);
+    n = read(server_fd, buffer, 2048);
+    printf("read %d bytes from server\n", n); // TODO: debug
     if (n == 0) {
-      // TODO: server closed the connection!
-      close(forward_fd);
-      // reusing res from before
-      // TODO: extract into function?
-      for (p = res; p != NULL; p = p->ai_next) {
-        forward_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (forward_fd == -1)
-          continue;
+      // upstream server closed the connection!
+      close(server_fd);
 
-        if (connect(forward_fd, p->ai_addr, p->ai_addrlen) != -1) {
-          break;
-        }
+      printf("Reconnecting to the upstream server...\n"); // TODO: debug
+      reconnect_to_server(&server_fd, &server_addr);
+      printf("Reconnected to the upstream server!\n"); // TODO: debug
 
-        close(forward_fd);
-      }
-
-      if (!p) {
-        perror("failed to connect");
-        exit(EXIT_FAILURE);
-      }
-
-      printf("Reconnecting to the upstream server...\n");
-
-      n = write(forward_fd, buffer, old_n);
-      printf("wrote %d bytes to server\n", n);
-      n = read(forward_fd, buffer, 2048);
-      printf("read %d bytes from server\n", n);
+      // resend buffer to upstream server
+      n = write(server_fd, buffer, read_from_client);
+      printf("wrote %d bytes to server\n", n); // TODO: debug
+      n = read(server_fd, buffer, 2048);
+      printf("read %d bytes from server\n", n); // TODO: debug
     }
     if (n < 0) {
-      perror("failed to read");
+      perror("failed to read from server");
       exit(EXIT_FAILURE);
     }
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i) { // TODO: debug
       printf("%x ", buffer[i]);
     }
     printf("\n");
 
     n = write(sock_fd, buffer, n);
-    printf("wrote %d bytes to client\n", n);
+    printf("wrote %d bytes to client\n", n); // TODO: debug
     if (n < 0) {
-      perror("failed to write");
+      perror("failed to write to client");
       exit(EXIT_FAILURE);
     }
 
+    // finished communicating with the client
     close(sock_fd);
 
     printf("DONE!\n");
-    printf("----------------------------------------------------\n");
+    printf("----------------------------------------------------\n"); // TODO:
+                                                                      // debug
     memset(buffer, 0, 2048);
   }
 
-  freeaddrinfo(res);
+  freeaddrinfo(server_addr);
 
-  close(sock_fd);
-
-  close(forward_fd);
+  close(server_fd);
   close(listener_fd);
 
   return 0;
