@@ -63,16 +63,45 @@ void insert_list(linked_list_t *list, struct packet *packet) {
   node_t *node = new_list_node(packet);
   assert(node && list);
 
-  if (!list->head) {
-    list->head = node;
+  if (list->head) {
+    list->head->prev = node;
+    node->next = list->head;
   }
-  if (list->tail) {
-    list->tail->next = node;
-    node->prev = list->tail;
+  if (!list->tail) {
+    list->tail = node;
   }
 
-  list->tail = node;
+  list->head = node;
   list->size++;
+}
+
+void move_front_list(linked_list_t *list, node_t *node) {
+  assert(node && list);
+
+  if (node == list->head) {
+    list->head = node->next;
+  }
+  if (node == list->tail) {
+    list->tail = node->prev;
+  }
+
+  if (node->prev) {
+    node->prev->next = node->next;
+    node->prev = NULL;
+  }
+  if (node->next) {
+    node->next->prev = node->prev;
+  }
+
+  if (list->head) {
+    list->head->prev = node;
+    node->next = list->head;
+  }
+  if (!list->tail) {
+    list->tail = node;
+  }
+
+  list->head = node;
 }
 
 void delete_list(linked_list_t *list, node_t *node) {
@@ -102,6 +131,7 @@ uint32_t get_ttl(node_t *node) {
   double elapsed = difftime(now, node->last_used);
   node->packet->answer.ttl -= elapsed;
   return node->packet->answer.ttl;
+  return 0;
 }
 
 void print_list(linked_list_t *list) {
@@ -117,4 +147,5 @@ void print_list(linked_list_t *list) {
     printf("  TTL: %d (retrieved: %s)\n", get_ttl(curr), buffer);
     curr = curr->next;
   }
+  printf("\n");
 }
