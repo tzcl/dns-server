@@ -60,7 +60,7 @@ void log_response(FILE *log, char *domain, char *address) {
 void log_cache_hit(FILE *log, char *domain, uint32_t ttl) {
   char time_buf[TIME_LEN], expiry[TIME_LEN];
   get_time(time_buf, 0);
-  get_time(expiry, ttl); // TODO: double check this
+  get_time(expiry, ttl);
   fprintf(log, "%s %s expires at %s\n", time_buf, domain, expiry);
   fflush(log);
 }
