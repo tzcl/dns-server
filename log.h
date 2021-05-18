@@ -13,14 +13,14 @@ void close_log(FILE *log);
 
 /**
  * Writes a request message to the log */
-void write_request(FILE *log, char *domain);
+void log_request(FILE *log, char *domain);
 
 /**
  * Writes that there has been an invalid request in the log */
-void write_invalid_request(FILE *log);
+void log_invalid_request(FILE *log);
 
 /**
  * Writes a response message to the log */
-void write_response(FILE *log, char *domain, char *address);
+void log_response(FILE *log, char *domain, char *address);
 
 #endif // LOG_H_

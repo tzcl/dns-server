@@ -30,7 +30,7 @@ void get_time(char *buffer) {
 
 /**
  * Writes a request message to the log */
-void write_request(FILE *log, char *domain) {
+void log_request(FILE *log, char *domain) {
   char time_buf[TIME_LEN];
   get_time(time_buf);
   fprintf(log, "%s requested %s\n", time_buf, domain);
@@ -39,7 +39,7 @@ void write_request(FILE *log, char *domain) {
 
 /**
  * Writes that there has been an invalid request in the log */
-void write_invalid_request(FILE *log) {
+void log_invalid_request(FILE *log) {
   char time_buf[TIME_LEN];
   get_time(time_buf);
   fprintf(log, "%s unimplemented request\n", time_buf);
@@ -48,7 +48,7 @@ void write_invalid_request(FILE *log) {
 
 /**
  * Writes a response message to the log */
-void write_response(FILE *log, char *domain, char *address) {
+void log_response(FILE *log, char *domain, char *address) {
   char time_buf[TIME_LEN];
   get_time(time_buf);
   fprintf(log, "%s %s is at %s\n", time_buf, domain, address);

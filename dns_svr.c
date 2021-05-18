@@ -193,6 +193,32 @@ void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
   }
 }
 
+/**
+ * Writes the packet header through the specified socket */
+void write_packet_header(int sock_fd, struct packet *packet) {
+  size_t len = 6 * sizeof(uint16_t);
+  uint16_t nlen = htons(len);
+  write(sock_fd, &nlen, 2);
+
+  uint16_t id = htons(packet->header.id);
+  write(sock_fd, &id, sizeof(uint16_t));
+
+  uint16_t flags = htons(packet->header.flags);
+  write(sock_fd, &flags, sizeof(uint16_t));
+
+  uint16_t qd = htons(packet->header.qd_count);
+  write(sock_fd, &qd, sizeof(uint16_t));
+
+  uint16_t an = htons(packet->header.an_count);
+  write(sock_fd, &an, sizeof(uint16_t));
+
+  uint16_t ns = htons(packet->header.ns_count);
+  write(sock_fd, &ns, sizeof(uint16_t));
+
+  uint16_t ar = htons(packet->header.ar_count);
+  write(sock_fd, &ar, sizeof(uint16_t));
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     fprintf(stderr, "Usage: ./dns_svr addr port\n");
@@ -221,56 +247,68 @@ int main(int argc, char *argv[]) {
   init_server(argv[1], argv[2], &hints, &server_addr);
   connect_to_server(&server_fd, &server_addr);
 
-  byte *buffer, *resend;
+  struct packet *packet = NULL;
+  byte *req_buf, *res_buf;
   uint16_t buf_size;
   int sock_fd;
 
-  struct packet *packet = NULL;
+  FILE *log = open_log();
 
   while (1) {
     accept_client(&sock_fd, listener_fd);
 
     // Parse request from client
-    read_packet(sock_fd, &buffer, &buf_size);
-    packet = parse_packet(buffer);
+    read_packet(sock_fd, &req_buf, &buf_size);
+    packet = parse_packet(req_buf);
 
-    printf("%s request for %s\n", is_AAAA(packet) ? "AAAA" : "non-AAAA",
-           packet->question.name);
+    if (!is_AAAA_request(packet)) {
+      log_invalid_request(log);
+
+      set_unimpl_rcode(packet);
+
+      write_packet_header(sock_fd, packet);
+
+      free(req_buf);
+      free_packet(packet);
+      close(sock_fd);
+      continue;
+    }
+
+    log_request(log, packet->question.name);
 
     // forward to server
-    write_packet(server_fd, buffer, buf_size);
+    write_packet(server_fd, req_buf, buf_size);
 
-    resend = buffer;
-    free(buffer);
     free_packet(packet);
 
     // Parse response from server
-    if (!read_packet(server_fd, &buffer, &buf_size)) {
+    if (!read_packet(server_fd, &res_buf, &buf_size)) {
       close(server_fd);
-
       reconnect_to_server(&server_fd, &server_addr);
 
-      write_packet(server_fd, resend, buf_size);
-      free(resend);
-
-      read_packet(server_fd, &buffer, &buf_size);
+      write_packet(server_fd, req_buf, buf_size);
+      read_packet(server_fd, &res_buf, &buf_size);
     }
 
-    packet = parse_packet(buffer);
+    free(req_buf);
 
-    printf("response for %s: %s\n", packet->answer.name,
-           packet->answer.address);
+    packet = parse_packet(res_buf);
 
-    write_packet(sock_fd, buffer, buf_size);
+    if (is_AAAA_response(packet)) {
+      log_response(log, packet->answer.name, packet->answer.address);
+    }
 
-    free(buffer);
+    write_packet(sock_fd, res_buf, buf_size);
+
+    free(res_buf);
     free_packet(packet);
 
-    // finished communicating with the client
     close(sock_fd);
   }
 
   freeaddrinfo(server_addr);
+
+  close_log(log);
 
   close(server_fd);
   close(listener_fd);

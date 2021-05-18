@@ -140,7 +140,26 @@ int is_response(struct packet *packet) { return packet->header.flags >> 15; }
 
 /**
  * Returns 1 if the request is for an AAAA record, else returns 0
- * Assumes the packet is known to be a DNS request */
-int is_AAAA(struct packet *packet) {
+ */
+int is_AAAA_request(struct packet *packet) {
   return packet->question.type == AAAA_RECORD;
+}
+
+/**
+ * Returns 1 if the first answer is an AAAA field, else returns 0
+ */
+int is_AAAA_response(struct packet *packet) {
+  return packet->answer.type == AAAA_RECORD;
+}
+
+/**
+ * Sets the rcode in the header to 4 (unimplemented request) */
+void set_unimpl_rcode(struct packet *packet) {
+  packet->header.flags |= 1 << 2;
+  packet->header.flags |= 1 << 15;
+
+  packet->header.qd_count = 0;
+  packet->header.an_count = 0;
+  packet->header.ns_count = 0;
+  packet->header.ar_count = 0;
 }
