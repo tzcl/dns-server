@@ -152,6 +152,8 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
 
+    int old_n = n;
+
     n = read(forward_fd, buffer, 2048);
     printf("read %d bytes from server\n", n);
     if (n == 0) {
@@ -175,6 +177,13 @@ int main(int argc, char *argv[]) {
         perror("failed to connect");
         exit(EXIT_FAILURE);
       }
+
+      printf("Reconnecting to the upstream server...\n");
+
+      n = write(forward_fd, buffer, old_n);
+      printf("wrote %d bytes to server\n", n);
+      n = read(forward_fd, buffer, 2048);
+      printf("read %d bytes from server\n", n);
     }
     if (n < 0) {
       perror("failed to read");
