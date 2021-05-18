@@ -261,6 +261,8 @@ int main(int argc, char *argv[]) {
     read_packet(sock_fd, &req_buf, &buf_size);
     packet = parse_packet(req_buf);
 
+    log_request(log, packet->question.name);
+
     if (!is_AAAA_request(packet)) {
       log_invalid_request(log);
 
@@ -273,8 +275,6 @@ int main(int argc, char *argv[]) {
       close(sock_fd);
       continue;
     }
-
-    log_request(log, packet->question.name);
 
     // forward to server
     write_packet(server_fd, req_buf, buf_size);

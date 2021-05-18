@@ -110,14 +110,13 @@ void parse_question(struct packet *packet, byte **buffer) {
 void parse_answer(struct packet *packet, byte **buffer) {
   size_t inc = sizeof(uint16_t) / sizeof(byte);
 
-  // TODO: dirty hack because I don't want to do this properly
   packet->answer.name = (char *)malloc(strlen(packet->question.name) + 1);
   assert(packet->answer.name);
   strcpy(packet->answer.name, packet->question.name);
   *buffer += inc;
 
-  packet->answer.type = packet->question.type, *buffer += inc;
-  packet->answer.rclass = packet->question.qclass, *buffer += inc;
+  packet->answer.type = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
+  packet->answer.rclass = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
 
   packet->answer.ttl = ntohl(*((uint32_t *)*buffer)), *buffer += 2 * inc;
 
@@ -156,6 +155,7 @@ int is_AAAA_response(struct packet *packet) {
  * Sets the rcode in the header to 4 (unimplemented request) */
 void set_unimpl_rcode(struct packet *packet) {
   packet->header.flags |= 1 << 2;
+  packet->header.flags |= 1 << 7;
   packet->header.flags |= 1 << 15;
 
   packet->header.qd_count = 0;
