@@ -8,7 +8,13 @@
 #include <unistd.h>
 
 #define QNAME_LEN 256
+#define HEADER_LEN 12
+#define IP6_LEN 16
+#define C_OFFS 0x0cc0
 #define AAAA_RECORD 28
+
+#define SHORT 2
+#define LONG 4
 
 struct packet *init_packet(uint16_t buf_size) {
   struct packet *packet = (struct packet *)malloc(sizeof *packet);
@@ -69,14 +75,12 @@ struct packet *parse_packet(byte *buffer, uint16_t buf_size) {
 /**
  * Populates the packet header and increments the buffer pointer */
 void parse_header(struct packet *packet, byte **buffer) {
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
-
-  packet->header.id = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->header.flags = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->header.qd_count = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->header.an_count = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->header.ns_count = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->header.ar_count = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
+  packet->header.id = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->header.flags = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->header.qd_count = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->header.an_count = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->header.ns_count = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->header.ar_count = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
 }
 
 /**
@@ -100,32 +104,25 @@ void parse_question(struct packet *packet, byte **buffer) {
   assert(packet->question.name);
   memcpy(packet->question.name, qname_buffer, index);
 
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
-  packet->question.type = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->question.qclass = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
+  packet->question.type = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->question.qclass = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
 }
 
 /**
  * Populates the packet answer and increments the buffer pointer */
 void parse_answer(struct packet *packet, byte **buffer) {
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
+  packet->answer.name = packet->question.name, *buffer += SHORT;
 
-  packet->answer.name = packet->question.name;
-  packet->answer.original = ntohs(*((uint16_t *)*buffer));
-  *buffer += inc;
+  packet->answer.type = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
+  packet->answer.rclass = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
 
-  packet->answer.type = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
-  packet->answer.rclass = ntohs(*((uint16_t *)*buffer)), *buffer += inc;
+  packet->answer.ttl = ntohl(*((uint32_t *)*buffer)), *buffer += LONG;
 
-  packet->answer.ttl = ntohl(*((uint32_t *)*buffer)), *buffer += 2 * inc;
-
-  uint16_t rd_length = ntohs(*((uint16_t *)*buffer));
-  *buffer += inc;
+  uint16_t rd_length;
+  rd_length = ntohs(*((uint16_t *)*buffer)), *buffer += SHORT;
 
   byte rdata[rd_length];
-  for (int i = 0; i < rd_length; i++) {
-    rdata[i] = *(*buffer)++;
-  }
+  memcpy(rdata, *buffer, rd_length), *buffer += rd_length;
 
   packet->answer.address = (char *)malloc(INET6_ADDRSTRLEN);
   assert(packet->answer.address);
@@ -140,8 +137,6 @@ byte *buffer_packet(struct packet *packet) {
   byte *buffer_ptr = buffer;
 
   buffer_header(&packet->header, &buffer_ptr);
-
-  assert(buffer_ptr - buffer == 12);
 
   if (packet->header.qd_count) {
     buffer_question(&packet->question, &buffer_ptr);
@@ -159,22 +154,19 @@ byte *buffer_packet(struct packet *packet) {
 /**
  * Converts the packet header back into a byte stream */
 void buffer_header(struct header *header, byte **buffer) {
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
-
   uint16_t id = htons(header->id);
-  memcpy(*buffer, &id, inc), *buffer += inc;
-
+  memcpy(*buffer, &id, SHORT), *buffer += SHORT;
   uint16_t flags = htons(header->flags);
-  memcpy(*buffer, &flags, inc), *buffer += inc;
+  memcpy(*buffer, &flags, SHORT), *buffer += SHORT;
 
   uint16_t qd_count = htons(header->qd_count);
-  memcpy(*buffer, &qd_count, inc), *buffer += inc;
+  memcpy(*buffer, &qd_count, SHORT), *buffer += SHORT;
   uint16_t an_count = htons(header->an_count);
-  memcpy(*buffer, &an_count, inc), *buffer += inc;
+  memcpy(*buffer, &an_count, SHORT), *buffer += SHORT;
   uint16_t ns_count = htons(header->ns_count);
-  memcpy(*buffer, &ns_count, inc), *buffer += inc;
+  memcpy(*buffer, &ns_count, SHORT), *buffer += SHORT;
   uint16_t ar_count = htons(header->ar_count);
-  memcpy(*buffer, &ar_count, inc), *buffer += inc;
+  memcpy(*buffer, &ar_count, SHORT), *buffer += SHORT;
 }
 
 /**
@@ -184,7 +176,7 @@ void buffer_question(struct question *question, byte **buffer) {
   int start = 0;
   for (int i = 0; i < name_len; ++i) {
     if (question->name[i] == '.' || i == name_len - 1) {
-      **buffer = (i - start), (*buffer)++;
+      **buffer = i - start, (*buffer)++;
 
       for (int j = start; j < i; ++j) {
         **buffer = question->name[j], (*buffer)++;
@@ -195,59 +187,52 @@ void buffer_question(struct question *question, byte **buffer) {
   }
   **buffer = 0, (*buffer)++;
 
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
-
   uint16_t type = htons(question->type);
-  memcpy(*buffer, &type, inc), *buffer += inc;
+  memcpy(*buffer, &type, SHORT), *buffer += SHORT;
   uint16_t qclass = htons(question->qclass);
-  memcpy(*buffer, &qclass, inc), *buffer += inc;
+  memcpy(*buffer, &qclass, SHORT), *buffer += SHORT;
 }
 
 /**
  * Converts the packet answer back into a byte stream */
 void buffer_answer(struct resource *answer, byte **buffer) {
-  size_t inc = sizeof(uint16_t) / sizeof(byte);
-
-  uint16_t compressed_name = 0x0cc0;
-  memcpy(*buffer, &compressed_name, inc), *buffer += inc;
+  uint16_t compressed_name = C_OFFS;
+  memcpy(*buffer, &compressed_name, SHORT), *buffer += SHORT;
 
   uint16_t type = htons(answer->type);
-  memcpy(*buffer, &type, inc), *buffer += inc;
-
+  memcpy(*buffer, &type, SHORT), *buffer += SHORT;
   uint16_t rclass = htons(answer->rclass);
-  memcpy(*buffer, &rclass, inc), *buffer += inc;
+  memcpy(*buffer, &rclass, SHORT), *buffer += SHORT;
 
   uint32_t ttl = htonl(answer->ttl);
-  memcpy(*buffer, &ttl, 2 * inc), *buffer += 2 * inc;
+  memcpy(*buffer, &ttl, LONG), *buffer += LONG;
 
-  uint16_t rd_length = htons(16);
-  memcpy(*buffer, &rd_length, inc), *buffer += inc;
+  uint16_t rd_length = htons(IP6_LEN);
+  memcpy(*buffer, &rd_length, SHORT), *buffer += SHORT;
 
-  byte rdata[16];
+  byte rdata[IP6_LEN];
   inet_pton(AF_INET6, answer->address, rdata);
-  memcpy(*buffer, rdata, 16), *buffer += 16;
+  memcpy(*buffer, rdata, IP6_LEN), *buffer += IP6_LEN;
 }
 
 /**
- * Returns 1 if the packet is a response, else returns 0  */
+ * Returns whether the QR bit is set  */
 int is_response(struct packet *packet) { return packet->header.flags >> 15; }
 
 /**
- * Returns 1 if the request is for an AAAA record, else returns 0
- */
+ * Returns whether the question type is AAAA */
 int is_AAAA_request(struct packet *packet) {
   return packet->question.type == AAAA_RECORD;
 }
 
 /**
- * Returns 1 if the first answer is an AAAA field, else returns 0
- */
+ * Returns whether the answer type is AAAA */
 int is_AAAA_response(struct packet *packet) {
   return packet->answer.type == AAAA_RECORD;
 }
 
 /**
- * Returns 1 if the packet contains an answer, else returns 0 */
+ * Returns whether the packet contains an answer */
 int contains_answer(struct packet *packet) { return packet->header.an_count; }
 
 /**

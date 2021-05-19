@@ -107,6 +107,8 @@ void connect_to_server(int *server_fd, struct addrinfo **server_addr) {
   *server_addr = p;
 }
 
+/**
+ * Reconnects to the upstream server in case the connection was closed */
 void reconnect_to_server(int *server_fd, struct addrinfo **server_addr) {
   struct addrinfo *p = *server_addr;
 
@@ -174,8 +176,8 @@ ssize_t read_packet(int sock_fd, byte **buffer, uint16_t *buf_size) {
 }
 
 /**
- * Writes a DNS packet to the specified socket */
-void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
+ * Forwards a DNS packet to the specified socket */
+void forward_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
   ssize_t n, m;
   uint16_t nbuf_size = htons(buf_size);
 
@@ -198,7 +200,7 @@ void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
 }
 
 /**
- * Writes the packet header through the specified socket */
+ * Sends the packet header through the specified socket */
 void send_packet_header(int sock_fd, struct header *header) {
   // Set header flags
   set_rcode(UNIMPL_RCODE, header);
@@ -219,6 +221,8 @@ void send_packet_header(int sock_fd, struct header *header) {
   free(buffer);
 }
 
+/**
+ * Sends a DNS packet through the specified socket */
 void send_packet(int sock_fd, int id, struct packet *packet) {
   uint16_t buf_size = htons(packet->size);
   write(sock_fd, &buf_size, sizeof(uint16_t));
@@ -226,7 +230,6 @@ void send_packet(int sock_fd, int id, struct packet *packet) {
   packet->header.id = id;
 
   byte *buffer = buffer_packet(packet);
-
   write(sock_fd, buffer, packet->size);
 
   free(buffer);
@@ -267,7 +270,7 @@ int main(int argc, char *argv[]) {
 
   FILE *log = open_log();
   linked_list_t *cache = new_list();
-  node_t *result;
+  node_t *node;
 
   while (1) {
     accept_client(&sock_fd, listener_fd);
@@ -286,73 +289,74 @@ int main(int argc, char *argv[]) {
       free(req_buf);
       free_packet(packet);
       close(sock_fd);
+
       continue;
     }
 
-    if (!empty_list(cache) &&
-        search_list(cache, packet->question.name, &result)) {
-      uint32_t ttl = get_ttl(result);
+    if (search_list(cache, packet->question.name, &node)) {
+      uint32_t ttl = get_ttl(node);
       if (ttl != 0) {
         log_cache_hit(log, packet->question.name, ttl);
 
-        move_front_list(cache, result);
+        move_front_list(cache, node);
 
-        send_packet(sock_fd, packet->header.id, result->packet);
+        send_packet(sock_fd, packet->header.id, node->packet);
 
-        log_response(log, packet->question.name,
-                     result->packet->answer.address);
+        log_response(log, packet->question.name, node->address);
 
         free(req_buf);
         free_packet(packet);
         close(sock_fd);
+
         continue;
       } else {
-        log_cache_replace(log, result->packet->answer.name,
-                          result->packet->answer.name);
-        delete_list(cache, result);
+        log_cache_replace(log, node->name, packet->question.name);
+        delete_list(cache, node);
       }
     }
 
-    // forward to server
-    write_packet(server_fd, req_buf, buf_size);
-
     free_packet(packet);
+
+    // Not in cache, forward request to upstream server
+    forward_packet(server_fd, req_buf, buf_size);
 
     // Parse response from server
     if (!read_packet(server_fd, &res_buf, &buf_size)) {
+      // Server may close the connection after inactivity
+      // so need to reconnect
       close(server_fd);
       reconnect_to_server(&server_fd, &server_addr);
 
-      write_packet(server_fd, req_buf, buf_size);
+      forward_packet(server_fd, req_buf, buf_size);
       read_packet(server_fd, &res_buf, &buf_size);
     }
-
-    free(req_buf);
 
     packet = parse_packet(res_buf, buf_size);
 
     if (contains_answer(packet) && is_AAAA_response(packet)) {
       if (cache->size == MAX_CACHE) {
-        node_t *delete;
-        if (find_expired_list(cache, &result)) {
-          delete = result;
-        } else {
-          delete = cache->tail;
+        // Try to replace expired entries, otherwise, evict the last entry
+        if (!find_expired_list(cache, &node)) {
+          node = cache->tail;
         }
 
-        log_cache_replace(log, delete->packet->answer.name,
-                          packet->answer.name);
-        delete_list(cache, delete);
+        log_cache_replace(log, node->name, packet->answer.name);
+        delete_list(cache, node);
       }
 
       log_response(log, packet->answer.name, packet->answer.address);
 
+      // Create a copy of the response packet in the cache
       insert_list(cache, parse_packet(res_buf, buf_size));
     }
-    write_packet(sock_fd, res_buf, buf_size);
 
-    free(res_buf);
+    // forward the response packet to the client
+    forward_packet(sock_fd, res_buf, buf_size);
+
     free_packet(packet);
+
+    free(req_buf);
+    free(res_buf);
 
     close(sock_fd);
   }

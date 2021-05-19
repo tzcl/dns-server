@@ -11,6 +11,8 @@ typedef struct list_node node_t;
 
 struct list_node {
   struct packet *packet;
+  char *name;
+  char *address;
   time_t last_used;
   node_t *prev;
   node_t *next;

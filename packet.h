@@ -21,7 +21,6 @@ struct question {
 };
 
 struct resource {
-  uint16_t original;
   char *name;
   uint16_t type;
   uint16_t rclass;

@@ -11,6 +11,9 @@ node_t *new_list_node(struct packet *packet) {
   assert(node);
 
   node->packet = packet;
+
+  node->name = packet->answer.name;
+  node->address = packet->answer.address;
   node->last_used = time(NULL);
 
   node->prev = NULL;
@@ -45,7 +48,9 @@ void free_list(linked_list_t *list) {
 bool empty_list(linked_list_t *list) { return list->size == 0; }
 
 bool search_list(linked_list_t *list, char *name, node_t **result) {
-  assert(list && !empty_list(list));
+  assert(list);
+  if (empty_list(list))
+    return false;
 
   node_t *curr = list->head;
   while (curr) {
