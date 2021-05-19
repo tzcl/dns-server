@@ -78,6 +78,10 @@ int is_AAAA_request(struct packet *packet);
 int is_AAAA_response(struct packet *packet);
 
 /**
+ * Returns 1 if the packet contains an answer, else returns 0 */
+int contains_answer(struct packet *packet);
+
+/**
  * Sets the rcode in the header to 4 (unimplemented request) */
 void set_unimpl_rcode(struct packet *packet);
 

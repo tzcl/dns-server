@@ -295,6 +295,7 @@ int main(int argc, char *argv[]) {
     packet = parse_packet(res_buf);
 
     if (is_AAAA_response(packet)) {
+    if (contains_answer(packet) && is_AAAA_response(packet)) {
       log_response(log, packet->answer.name, packet->answer.address);
     }
 

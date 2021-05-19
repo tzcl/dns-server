@@ -152,6 +152,10 @@ int is_AAAA_response(struct packet *packet) {
 }
 
 /**
+ * Returns 1 if the packet contains an answer, else returns 0 */
+int contains_answer(struct packet *packet) { return packet->header.an_count; }
+
+/**
  * Sets the rcode in the header to 4 (unimplemented request) */
 void set_unimpl_rcode(struct packet *packet) {
   packet->header.flags |= 1 << 2;
