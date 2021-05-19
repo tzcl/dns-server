@@ -10,7 +10,10 @@
 typedef struct list_node node_t;
 
 struct list_node {
-  struct packet *packet;
+  byte *buffer;
+  uint16_t buf_size;
+  char *name;
+  uint32_t ttl;
   time_t last_used;
   node_t *prev;
   node_t *next;
@@ -28,8 +31,10 @@ void free_list(linked_list_t *list);
 bool empty_list(linked_list_t *list);
 
 bool search_list(linked_list_t *list, char *name, node_t **result);
-void insert_list(linked_list_t *list, struct packet *packet);
+void insert_list(linked_list_t *list, char *name, byte *buffer,
+                 uint16_t buf_size, uint32_t ttl);
 void move_front_list(linked_list_t *list, node_t *node);
+void delete_expired_list(linked_list_t *list);
 void delete_list(linked_list_t *list, node_t *node);
 
 uint32_t get_ttl(node_t *node);

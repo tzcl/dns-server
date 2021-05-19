@@ -1,6 +1,9 @@
+#include "list.h"
 #include "log.h"
 #include "packet.h"
 
+#include <arpa/inet.h>
+#include <assert.h>
 #include <netdb.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,10 +11,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-// TODO: refactor time variable from log to this class?
+#define CACHE
+#define MAX_CACHE 5
 
 #define PORT "8053"
 #define BACKLOG 5
+
+#define UNIMPL_RCODE 4
+#define HEADER_LEN 12
 
 /**
  * Initialises a socket so our server can receive clients */
@@ -161,10 +168,7 @@ ssize_t read_packet(int sock_fd, byte **buffer, uint16_t *buf_size) {
   *buf_size = ntohs(tbuf_size);
 
   *buffer = malloc(*buf_size);
-  if (!buffer) {
-    perror("allocating buffer");
-    exit(EXIT_FAILURE);
-  }
+  assert(*buffer);
 
   return read_all(sock_fd, *buffer, *buf_size);
 }
@@ -195,28 +199,37 @@ void write_packet(int sock_fd, byte *buffer, uint16_t buf_size) {
 
 /**
  * Writes the packet header through the specified socket */
-void write_packet_header(int sock_fd, struct packet *packet) {
-  size_t len = 6 * sizeof(uint16_t);
-  uint16_t nlen = htons(len);
-  write(sock_fd, &nlen, 2);
+void send_packet_header(int sock_fd, struct header *header) {
+  // Set header flags
+  set_rcode(UNIMPL_RCODE, header);
+  set_response(header);
+  set_RA(header);
+  zero_counts(header);
 
-  uint16_t id = htons(packet->header.id);
-  write(sock_fd, &id, sizeof(uint16_t));
+  uint16_t nlen = htons(HEADER_LEN);
+  write(sock_fd, &nlen, sizeof(uint16_t));
 
-  uint16_t flags = htons(packet->header.flags);
-  write(sock_fd, &flags, sizeof(uint16_t));
+  byte *buffer = malloc(HEADER_LEN);
+  assert(buffer);
 
-  uint16_t qd = htons(packet->header.qd_count);
-  write(sock_fd, &qd, sizeof(uint16_t));
+  byte *buffer_ptr = buffer;
+  buffer_header(header, &buffer_ptr);
+  write(sock_fd, buffer, HEADER_LEN);
 
-  uint16_t an = htons(packet->header.an_count);
-  write(sock_fd, &an, sizeof(uint16_t));
+  free(buffer);
+}
 
-  uint16_t ns = htons(packet->header.ns_count);
-  write(sock_fd, &ns, sizeof(uint16_t));
+void send_packet(int sock_fd, int id, struct packet *packet) {
+  uint16_t buf_size = htons(packet->size);
+  write(sock_fd, &buf_size, sizeof(uint16_t));
 
-  uint16_t ar = htons(packet->header.ar_count);
-  write(sock_fd, &ar, sizeof(uint16_t));
+  packet->header.id = id;
+
+  byte *buffer = buffer_packet(packet);
+
+  write(sock_fd, buffer, packet->size);
+
+  free(buffer);
 }
 
 int main(int argc, char *argv[]) {
@@ -253,27 +266,50 @@ int main(int argc, char *argv[]) {
   int sock_fd;
 
   FILE *log = open_log();
+  linked_list_t *cache = new_list();
+  node_t *result;
 
   while (1) {
     accept_client(&sock_fd, listener_fd);
 
     // Parse request from client
     read_packet(sock_fd, &req_buf, &buf_size);
-    packet = parse_packet(req_buf);
+    packet = parse_packet(req_buf, buf_size);
 
     log_request(log, packet->question.name);
 
     if (!is_AAAA_request(packet)) {
       log_invalid_request(log);
 
-      set_unimpl_rcode(packet);
-
-      write_packet_header(sock_fd, packet);
+      send_packet_header(sock_fd, &packet->header);
 
       free(req_buf);
       free_packet(packet);
       close(sock_fd);
       continue;
+    }
+
+    if (!empty_list(cache) &&
+        search_list(cache, packet->question.name, &result)) {
+      uint32_t ttl = get_ttl(result);
+      if (ttl != 0) {
+        log_cache_hit(log, packet->question.name, ttl);
+
+        // set the id
+        memcpy(result->buffer, &packet->header.id, 2);
+        uint16_t nbuf = htons(result->buf_size);
+        write(sock_fd, &nbuf, 2);
+        write(sock_fd, result->buffer, result->buf_size);
+
+        move_front_list(cache, result);
+
+        free(req_buf);
+        free_packet(packet);
+        close(sock_fd);
+        continue;
+      } else {
+        delete_list(cache, result);
+      }
     }
 
     // forward to server
@@ -292,13 +328,22 @@ int main(int argc, char *argv[]) {
 
     free(req_buf);
 
-    packet = parse_packet(res_buf);
+    packet = parse_packet(res_buf, buf_size);
 
-    if (is_AAAA_response(packet)) {
     if (contains_answer(packet) && is_AAAA_response(packet)) {
       log_response(log, packet->answer.name, packet->answer.address);
-    }
 
+      if (cache->size == MAX_CACHE) {
+        delete_expired_list(cache);
+        if (cache->size == MAX_CACHE) {
+          log_cache_replace(log, cache->tail->name, packet->answer.name);
+          delete_list(cache, cache->tail);
+        }
+      }
+
+      insert_list(cache, packet->answer.name, res_buf, buf_size,
+                  packet->answer.ttl);
+    }
     write_packet(sock_fd, res_buf, buf_size);
 
     free(res_buf);
@@ -310,6 +355,7 @@ int main(int argc, char *argv[]) {
   freeaddrinfo(server_addr);
 
   close_log(log);
+  free_list(cache);
 
   close(server_fd);
   close(listener_fd);
