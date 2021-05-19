@@ -296,7 +296,8 @@ int main(int argc, char *argv[]) {
         log_cache_hit(log, packet->question.name, ttl);
 
         // set the id
-        memcpy(result->buffer, &packet->header.id, 2);
+        uint16_t nid = htons(packet->header.id);
+        memcpy(result->buffer, &nid, 2);
         uint16_t nbuf = htons(result->buf_size);
         write(sock_fd, &nbuf, 2);
         write(sock_fd, result->buffer, result->buf_size);
