@@ -313,6 +313,7 @@ int main(int argc, char *argv[]) {
         close(sock_fd);
         continue;
       } else {
+        log_cache_replace(log, result->name, result->name);
         delete_list(cache, result);
       }
     }
@@ -337,11 +338,15 @@ int main(int argc, char *argv[]) {
 
     if (contains_answer(packet) && is_AAAA_response(packet)) {
       if (cache->size == MAX_CACHE) {
-        delete_expired_list(cache);
-        if (cache->size == MAX_CACHE) {
-          log_cache_replace(log, cache->tail->name, packet->answer.name);
-          delete_list(cache, cache->tail);
+        node_t *delete;
+        if (find_expired_list(cache, &result)) {
+          delete = result;
+        } else {
+          delete = cache->tail;
         }
+
+        log_cache_replace(log, delete->name, packet->answer.name);
+        delete_list(cache, delete);
       }
 
       log_response(log, packet->answer.name, packet->answer.address);

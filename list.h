@@ -34,7 +34,7 @@ bool search_list(linked_list_t *list, char *name, node_t **result);
 void insert_list(linked_list_t *list, char *name, byte *buffer,
                  uint16_t buf_size, uint32_t ttl);
 void move_front_list(linked_list_t *list, node_t *node);
-void delete_expired_list(linked_list_t *list);
+bool find_expired_list(linked_list_t *list, node_t **result);
 void delete_list(linked_list_t *list, node_t *node);
 
 uint32_t get_ttl(node_t *node);

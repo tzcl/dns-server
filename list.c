@@ -138,14 +138,17 @@ void delete_list(linked_list_t *list, node_t *node) {
   list->size--;
 }
 
-void delete_expired_list(linked_list_t *list) {
-  node_t *curr = list->head;
+bool find_expired_list(linked_list_t *list, node_t **result) {
+  node_t *curr = list->tail;
   while (curr) {
     if (get_ttl(curr) == 0) {
-      delete_list(list, curr);
+      *result = curr;
+      return true;
     }
-    curr = curr->next;
+    curr = curr->prev;
   }
+
+  return false;
 }
 
 uint32_t get_ttl(node_t *node) {
