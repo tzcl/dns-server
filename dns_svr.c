@@ -304,6 +304,10 @@ int main(int argc, char *argv[]) {
 
         move_front_list(cache, result);
 
+        free_packet(packet);
+        packet = parse_packet(result->buffer, result->buf_size);
+        log_response(log, packet->question.name, packet->answer.address);
+
         free(req_buf);
         free_packet(packet);
         close(sock_fd);
