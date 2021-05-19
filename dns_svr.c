@@ -336,8 +336,6 @@ int main(int argc, char *argv[]) {
     packet = parse_packet(res_buf, buf_size);
 
     if (contains_answer(packet) && is_AAAA_response(packet)) {
-      log_response(log, packet->answer.name, packet->answer.address);
-
       if (cache->size == MAX_CACHE) {
         delete_expired_list(cache);
         if (cache->size == MAX_CACHE) {
@@ -345,6 +343,8 @@ int main(int argc, char *argv[]) {
           delete_list(cache, cache->tail);
         }
       }
+
+      log_response(log, packet->answer.name, packet->answer.address);
 
       insert_list(cache, packet->answer.name, res_buf, buf_size,
                   packet->answer.ttl);
