@@ -295,17 +295,10 @@ int main(int argc, char *argv[]) {
       if (ttl != 0) {
         log_cache_hit(log, packet->question.name, ttl);
 
-        // set the id
-        uint16_t nid = htons(packet->header.id);
-        memcpy(result->buffer, &nid, 2);
-        uint16_t nbuf = htons(result->buf_size);
-        write(sock_fd, &nbuf, 2);
-        write(sock_fd, result->buffer, result->buf_size);
-
         move_front_list(cache, result);
 
-        free_packet(packet);
-        packet = parse_packet(result->buffer, result->buf_size);
+        send_packet(sock_fd, packet->header.id, result->packet);
+
         log_response(log, packet->question.name, packet->answer.address);
 
         free(req_buf);
@@ -313,7 +306,8 @@ int main(int argc, char *argv[]) {
         close(sock_fd);
         continue;
       } else {
-        log_cache_replace(log, result->name, result->name);
+        log_cache_replace(log, result->packet->answer.name,
+                          result->packet->answer.name);
         delete_list(cache, result);
       }
     }
@@ -345,14 +339,14 @@ int main(int argc, char *argv[]) {
           delete = cache->tail;
         }
 
-        log_cache_replace(log, delete->name, packet->answer.name);
+        log_cache_replace(log, delete->packet->answer.name,
+                          packet->answer.name);
         delete_list(cache, delete);
       }
 
       log_response(log, packet->answer.name, packet->answer.address);
 
-      insert_list(cache, packet->answer.name, res_buf, buf_size,
-                  packet->answer.ttl);
+      insert_list(cache, parse_packet(res_buf, buf_size));
     }
     write_packet(sock_fd, res_buf, buf_size);
 

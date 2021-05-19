@@ -141,12 +141,17 @@ byte *buffer_packet(struct packet *packet) {
 
   buffer_header(&packet->header, &buffer_ptr);
 
-  if (packet->header.qd_count)
+  assert(buffer_ptr - buffer == 12);
+
+  if (packet->header.qd_count) {
     buffer_question(&packet->question, &buffer_ptr);
-  if (packet->header.an_count)
+  }
+  if (packet->header.an_count) {
     buffer_answer(&packet->answer, &buffer_ptr);
-  if (packet->remaining)
+  }
+  if (packet->remaining) {
     memcpy(buffer_ptr, packet->remaining, packet->size - (buffer_ptr - buffer));
+  }
 
   return buffer;
 }
@@ -179,7 +184,7 @@ void buffer_question(struct question *question, byte **buffer) {
   int start = 0;
   for (int i = 0; i < name_len; ++i) {
     if (question->name[i] == '.' || i == name_len - 1) {
-      **buffer = start - i, (*buffer)++;
+      **buffer = (i - start), (*buffer)++;
 
       for (int j = start; j < i; ++j) {
         **buffer = question->name[j], (*buffer)++;
@@ -203,7 +208,7 @@ void buffer_question(struct question *question, byte **buffer) {
 void buffer_answer(struct resource *answer, byte **buffer) {
   size_t inc = sizeof(uint16_t) / sizeof(byte);
 
-  uint16_t compressed_name = 49164;
+  uint16_t compressed_name = 0x0cc0;
   memcpy(*buffer, &compressed_name, inc), *buffer += inc;
 
   uint16_t type = htons(answer->type);

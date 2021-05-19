@@ -6,22 +6,11 @@
 
 #define TIME_LEN 16
 
-node_t *new_list_node(char *name, byte *buffer, uint16_t buf_size,
-                      uint32_t ttl) {
+node_t *new_list_node(struct packet *packet) {
   node_t *node = malloc(sizeof(node_t));
   assert(node);
 
-  node->name = malloc(strlen(name) + 1);
-  assert(node->name);
-  strcpy(node->name, name);
-
-  node->buf_size = buf_size;
-  node->buffer = malloc(buf_size);
-  assert(node->buffer);
-  memcpy(node->buffer, buffer, buf_size);
-
-  node->ttl = ttl;
-
+  node->packet = packet;
   node->last_used = time(NULL);
 
   node->prev = NULL;
@@ -46,8 +35,7 @@ void free_list(linked_list_t *list) {
   while (curr) {
     prev = curr;
     curr = curr->next;
-    free(prev->buffer);
-    free(prev->name);
+    free_packet(prev->packet);
     free(prev);
   }
 
@@ -61,7 +49,7 @@ bool search_list(linked_list_t *list, char *name, node_t **result) {
 
   node_t *curr = list->head;
   while (curr) {
-    if (strcmp(name, curr->name) == 0) {
+    if (strcmp(name, curr->packet->answer.name) == 0) {
       *result = curr;
       return true;
     }
@@ -71,9 +59,8 @@ bool search_list(linked_list_t *list, char *name, node_t **result) {
   return false;
 }
 
-void insert_list(linked_list_t *list, char *name, byte *buffer,
-                 uint16_t buf_size, uint32_t ttl) {
-  node_t *node = new_list_node(name, buffer, buf_size, ttl);
+void insert_list(linked_list_t *list, struct packet *packet) {
+  node_t *node = new_list_node(packet);
   assert(node && list);
 
   if (list->head) {
@@ -157,9 +144,11 @@ uint32_t get_ttl(node_t *node) {
   double elapsed = difftime(now, node->last_used);
   node->last_used = now;
 
-  node->ttl = elapsed > node->ttl ? 0 : node->ttl - elapsed;
+  node->packet->answer.ttl = elapsed > node->packet->answer.ttl
+                                 ? 0
+                                 : node->packet->answer.ttl - elapsed;
 
-  return node->ttl;
+  return node->packet->answer.ttl;
 }
 
 void print_list(linked_list_t *list) {
@@ -170,9 +159,9 @@ void print_list(linked_list_t *list) {
   while (curr) {
     tm_info = localtime(&curr->last_used);
     strftime(buffer, TIME_LEN, "%H:%M:%S", tm_info);
-    /* printf("%s --> %s\n", curr->packet->answer.name, */
-    /* curr->packet->answer.address); */
-    /* printf("  TTL: %d (retrieved: %s)\n", get_ttl(curr), buffer); */
+    printf("%s --> %s\n", curr->packet->answer.name,
+           curr->packet->answer.address);
+    printf("  TTL: %d (retrieved: %s)\n", get_ttl(curr), buffer);
     curr = curr->next;
   }
   printf("\n");
