@@ -299,7 +299,8 @@ int main(int argc, char *argv[]) {
 
         send_packet(sock_fd, packet->header.id, result->packet);
 
-        log_response(log, packet->question.name, packet->answer.address);
+        log_response(log, packet->question.name,
+                     result->packet->answer.address);
 
         free(req_buf);
         free_packet(packet);
